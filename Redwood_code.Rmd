@@ -1,0 +1,355 @@
+---
+title: "Redwood data"
+author: "Jincen Li"
+date: "3/3/2019"
+output: html_document
+---
+```{r}
+library(ggplot2)
+library(dplyr)
+library(GGally)
+library(foreign)
+library(factoextra)
+library(mclust)
+```
+
+```{r}
+dat_all <- read.csv("~/Desktop/Stat154/proj 1/data/sonoma-data-all.csv")
+dat_log <- read.csv("~/Desktop/Stat154/proj 1/data/sonoma-data-log.csv")
+dat_net <- read.csv("~/Desktop/Stat154/proj 1/data/sonoma-data-net.csv")
+```
+
+####2 data cleaning 
+a).
+```{r}
+jpeg("Hist of Humid Variable from Log")
+par(mfrow=c(2,2))
+hist(dat_log$humidity, main = "Histogram of humidity from log dataset", breaks = "FD" , xlim = c(0,120), col = "cornflowerblue")
+hist(dat_log$humid_adj, main = "Histogram of humid_adj from log dataset", breaks = "FD", xlim = c(0,120), col = "cornflowerblue")
+hist(dat_log$humid_temp, main = "Histogram of humid_temp from log dataset", breaks = 1000, xlim = c(0,40), col = "cornflowerblue")
+dev.off()
+
+jpeg("Hist of Humid Variable from Net")
+par(mfrow=c(2,2))
+hist(dat_net$humidity, main = "Histogram of humidity from net dataset", breaks = "FD" , xlim = c(0,120))
+hist(dat_net$humid_adj, main = "Histogram of humid_adj from net dataset", breaks = "FD", xlim = c(0,120))
+hist(dat_net$humid_temp, main = "Histogram of humid_temp from net dataset", breaks = 500, xlim = c(0,30))
+dev.off()
+
+jpeg("Hist of Valtage")
+par(mfrow = c(1,2))
+hist(dat_log$voltage, main = "Histogram of voltage from log dataset", breaks = 100)
+hist(dat_net$voltage, main = "Histogram of voltage from net dataset", breaks = 100)
+dev.off()
+jpeg("Hist of Hamatop and Hamabot")
+par(mfrow = c(2,2))
+hist(dat_log$hamatop, breaks = 10, main = "Histogram of hamatop from log dataset")
+hist(dat_net$hamatop, breaks = 10, main = "Histogram of hamatop from net dataset")
+hist(dat_log$hamabot, breaks = 10, main = "Histogram of hamabot from log dataset")
+hist(dat_net$hamabot, breaks = 10, main = "Histogram of hamabot from net dataset")
+dev.off()
+
+head(summary(dat_log))
+head(summary(dat_net))
+
+```
+
+
+```{r}
+dat_all$voltage[dat_all$voltage >= 198.00] <-  dat_all$voltage[dat_all$voltage >= 198.00]/82
+dat_all$hamatop[dat_all$epoch %in% dat_log$epoch & dat_all$nodeid %in% dat_log$nodeid] <- dat_all$hamatop[dat_all$epoch %in% dat_log$epoch & dat_all$nodeid %in% dat_log$nodeid] * 0.0185
+dat_all$hamabot[dat_all$epoch %in% dat_log$epoch & dat_all$nodeid %in% dat_log$nodeid] <- dat_all$hamabot[dat_all$epoch %in% dat_log$epoch & dat_all$nodeid %in% dat_log$nodeid] * 0.0185
+summary(dat_all)
+```
+
+
+ b)
+```{r}
+dat_all[is.na(dat_all$humidity),]
+#sort(na_row$result_time) 
+dat_all_cleaned <- na.omit(dat_all) 
+
+# number of measurement is 12532. Date is 2004-05-07 19:19:58.713061 to 2004-05-13 13:20:32.009966
+```
+ 
+c)
+```{r}
+dat_loc <- read.table("data/mote-location-data.txt", header = TRUE)
+all <- merge(dat_all_cleaned, dat_loc, by.x = "nodeid" , by.y = "ID")
+all_bot <- merge(dat_all_cleaned, dat_loc, by.x = "nodeid" , by.y = "ID")
+names(all)
+
+# 15 variables 
+```
+
+```{r}
+# only keep unique observation
+all <- all[!duplicated(all[c("nodeid","epoch")]),]
+```
+
+ d)
+```{r}
+jpeg("Hist of Four Selected Variables 2d")
+par(mfrow=c(2,2))
+hist(all$humidity, breaks = "FD")
+hist(all$humid_temp, breaks = "FD")
+hist(all$hamatop, breaks = "FD")
+hist(all$hamabot, breaks = "FD")
+dev.off()
+
+#table(all$humidity)
+jpeg("2d outliner boxplot")
+par(mfrow=c(2,2))
+boxplot(all$humidity)
+boxplot(all$humid_temp)
+boxplot(all$hamatop)
+boxplot(all$hamabot)
+dev.off()
+
+```
+ 
+```{r}
+
+# par(mfrow=c(2,2))
+# ggplot(all, aes(x=humidity))+
+#   geom_histogram(bins = 150) 
+#   # geom_line(stat='summary',fun.y=quantile,fun.args = list(0.1),
+#   #           linetype=2,color='blue')
+#   #stat_quantile(quantiles = c(0.25), aes(colors = "red"), size = 2)
+#   #geom_vline(aes(xintercept = quantile), color="red", linetype="dashed", size=1)
+# ggplot(all, aes(x=humid_temp))+
+#   geom_histogram(bins = 150) 
+# ggplot(all, aes(x=hamatop))+
+#   geom_histogram(bins = 150) 
+# ggplot(all, aes(x=hamabot))+
+#   geom_histogram(bins = 150) 
+# 
+# 
+# ggplot(all, aes(y=humidity))+
+#   geom_boxplot()
+# ggplot(all, aes(y=humid_temp))+
+#   geom_boxplot()
+# ggplot(all, aes(y=hamatop))+
+#   geom_boxplot()
+# ggplot(all, aes(y=hamabot))+
+#   geom_boxplot()
+```
+
+
+```{r}
+remove_outliers <- function(x, na.rm = TRUE, ...) {
+  qnt <- quantile(x, probs=c(.25, .75), na.rm = na.rm, ...)
+  H <- 1.5 * IQR(x, na.rm = na.rm)
+  y <- x
+  y[x < (qnt[1] - H)] <- NA
+  y[x > (qnt[2] + H)] <- NA
+  y
+}
+
+all$humidity = remove_outliers(all$humidity)
+all$humid_temp = remove_outliers(all$humid_temp)
+all$hamatop = remove_outliers(all$hamatop)
+all$hamabot = remove_outliers(all$hamabot)
+all = all[all$voltage >= 2.4 & all$voltage <=3,]
+all = na.omit(all)
+
+# rationality: the outliers definition from boxplot
+```
+ 
+### 3
+a)
+```{r}
+#jpeg("3a pairs")
+all_3a <- filter(all, format(strptime(all$result_time, format="%Y-%m-%d %T"), format = "%Y-%m-%d") > '2004-06-01' & format(strptime(all$result_time, format="%Y-%m-%d %T"), format = "%Y-%m-%d") <= '2004-06-02')
+#ggpairs(all_3a[ , 5:12])
+pairs(all_3a[ ,5:12])
+#ggplot(all, aes(x = humidity, y = humid_temp)) + geom_point()
+#ggplot(all, aes(x = hamabot, y = hamabot)) + geom_point()
+#dev.off()
+```
+
+
+b)
+```{r}
+# incident PAR = hamatop
+
+```
+
+c)
+```{r}
+
+require(gridExtra)
+all1 <- all
+plot1 <- ggplot(all1, aes(x=epoch, y=humidity, color=Height, alpha = 0.6))+geom_point()+ggtitle("Relative Humidity") + ylab("Relative Humidity")
+plot2 <- ggplot(all1, aes(x=epoch, y=humid_temp, color=Height, alpha = 0.6))+geom_point()+ggtitle("Temperature") + ylab("Temperature")
+plot3 <- ggplot(all1, aes(x=epoch, y=hamatop, color=Height, alpha = 0.6))+geom_point() + ggtitle("Incident PAR") + ylab("Incident RAP")
+plot4 <- ggplot(all1, aes(x=epoch, y=hamabot, color=Height, alpha = 0.6))+geom_point()+ggtitle("Reflected PAR") + ylab("Relative PAR")
+grid.arrange(plot1, plot2, plot3, plot4, nrow=2, ncol = 2)
+# 
+# all1 <- all1[order(all1$result_time),]
+# dat_3c <- all1[min(which(grepl("2004-05-06",as.character(all1$result_time)))):max(which(grepl("2004-05-07",as.character(all1$result_time)))),]
+# 
+# 
+# jpeg("3c time series for humidity for a selected day")
+# ggplot(dat_3c, aes(x=result_time, y=humidity, color=Height, alpha = 0.3))+geom_point()
+# dev.off()
+# jpeg("3c time series for humid_time for a selected day")
+# ggplot(dat_3c, aes(x=result_time, y=humid_temp, color=Height, alpha = 0.3))+geom_point()
+# dev.off()
+# jpeg("3c time series for hamatop for a selected day")
+# ggplot(dat_3c, aes(x=result_time, y=hamatop, color=Height, alpha = 0.3))+geom_point()
+# dev.off()
+# jpeg("3c time series for hamabot for a selected day")
+# ggplot(dat_3c, aes(x=result_time, y=hamabot, color=Height, alpha = 0.3))+geom_point()
+# dev.off()
+
+dat_5.5_5.8 <- all1[all1$epoch >= 2098 & all1$epoch <= 2962, ]
+
+require(gridExtra)
+
+plot1 <- ggplot(dat_5.5_5.8, aes(x=epoch, y=humidity, color=Height, alpha = 0.6))+geom_point() +ggtitle("Relative Humidity") + ylab("Relative Humidity")
+plot2 <- ggplot(dat_5.5_5.8, aes(x=epoch, y=humid_temp, color=Height, alpha = 0.6))+geom_point()+ggtitle("Temperature") + ylab("Temperature")
+plot3 <- ggplot(dat_5.5_5.8, aes(x=epoch, y=hamatop, color=Height, alpha = 0.6))+geom_point()+ggtitle("Incident PAR") + ylab("Incident RAP")
+plot4 <- ggplot(dat_5.5_5.8, aes(x=epoch, y=hamabot, color=Height, alpha = 0.6))+geom_point()+ggtitle("Reflected PAR") + ylab("Relative PAR")
+grid.arrange(plot1, plot2, plot3, plot4, nrow=2, ncol = 2)
+```
+
+d)
+```{r}
+pca <- prcomp(all[c("hamatop", "humid_temp", "humidity","Height")], scale. = TRUE)
+summary(pca)
+
+jpeg("3d screeplot")
+fviz_eig(pca, addlabels = TRUE)
+dev.off()
+```
+#### 4
+
+```{r}
+#explore the relation between humidity, humid_temp and humid_adj
+pca_humid <- prcomp(all[c("humidity","humid_temp","humid_adj")], scale. = TRUE)
+summary(pca_humid)
+fviz_eig(pca_humid, addlabels = TRUE)
+
+pca_4a <- prcomp(all[c("humidity","voltage","parent", "depth")], scale. = TRUE)
+summary(pca_4a)
+fviz_eig(pca_4a, addlabels = TRUE)
+
+
+```
+
+```{r}
+jpeg("4a kmeans")
+# centers = 2, too general; cen
+KmeansTwoOut <- kmeans(all[c("hamatop", "humid_temp", "humidity","Height")], centers = 3)
+scores <- pca$x
+ggplot() + geom_point(aes(x = scores[,1], y=scores[,2], alpha=0.4, color = KmeansTwoOut$cluster)) +
+  labs(x ="PC1", y = "PC2")
+dev.off()
+```
+```{r}
+# clusters <- hclust(all[c("hamatop", "humid_temp", "humidity","Height")])
+# plot(clusters)
+```
+
+```{r}
+x = all[, 7:12]
+model <- Mclust(x, G =3)
+z_em <- apply(model$z, 1, which.max)
+em_means <- model$parameters$mean
+colors = c('red',"green","blue")
+ggplot() + geom_point(aes(x=x[,1], y=x[,2], col = colors[z_em])) +
+  labs(x="X1", y="X2") + 
+  geom_point(aes(x=em_means[,1], y=em_means[, 2]), shape = 15, size = 4) +
+  labs(title = "EM")
+```
+
+```{r}
+gmm <- Mclust(all[,7:12], G=3)
+z_em <- apply(gmm$z, 1, which.max)
+em_means <- gmm$parameters$mean
+
+ggplot() + 
+  geom_text(aes(x=all[,7:12][,1], y = all[,7:12][,2], label = z_em, colour = c("1","2")[z_em])) +
+  scale_color_manual(breaks = c("1","2"), values = c("red", "darkblue"))
+
+paste0("mean parameters of EM = ", summary(gmm, parameters = TRUE)[11])
+```
+
+
+#### 5
+a)
+```{r}
+jpeg("5a log hamatop")
+h = hist(log(all$hamatop))
+h$density = h$counts/sum(h$counts)*100
+plot(h,freq=FALSE, xlab = "log(μmol/m2/s)", main = "Log Transformation of Incident PAR ", ylab = "Percentage of readings", col = "darkblue")
+dev.off()
+
+jpeg("5a log hamabot")
+h1 = hist(log(dat_all$hamabot + 1))
+h1$density = h1$counts/sum(h1$counts)*100
+plot(h1,freq=FALSE, xlab = "log(μmol/m2/s)", main = "Log Transformation of Reflected PAR ", ylab = "Percentage of readings", col = "darkblue")
+dev.off()
+
+jpeg("5a log hamabot without zero")
+h2 = hist(log(dat_all[dat_all$hamabot != 0,]$hamabot))
+h2$density = h2$counts/sum(h1$counts)*100
+plot(h2,freq=FALSE, xlab = "log(μmol/m2/s)", main = "Log Transformation of Reflected PAR Without Zero", ylab = "Percentage of readings", col = "darkblue")
+dev.off()
+```
+
+b)
+```{r}
+require(gridExtra)
+plot1 <- ggplot(all[all$Height > 20,], aes(x = Height,y = humid_temp, group =  Height)) + coord_flip() + ggtitle("Temperature") + xlab(" Node Height (m)") + ylab("°C")  + stat_summary(fun.y=mean, geom="line",lwd=2,aes(group=1) ) + theme_classic()
+
+plot2 <- ggplot(all[all$Height > 20,], aes(x = Height,y =humidity, group =  Height))  + coord_flip() + ggtitle("Relative Humidity") + xlab(" Node Height (m)") + ylab("%RH")+ stat_summary(fun.y=mean,geom = "line",lwd=2,aes(group=1) ) + theme_classic()
+
+plot3 <- ggplot(all[all$Height > 20 & all$hamatop != 0,], aes(x = Height,y =hamatop, group =  Height)) +  coord_flip() + ggtitle("Incident PAR") + xlab(" Node Height (m)") + ylab("μmol/m2/s")+ stat_summary(fun.y=mean,geom = "line",lwd=2,aes(group=1) ) + theme_classic()
+
+plot4 <- ggplot(all_bot[all_bot$Height > 20&all_bot$hamabot != 0,], aes(x = Height, y =hamabot, group =  Height))  + coord_flip() + ggtitle("Reflected PAR") + xlab("Node Height (m)") + ylab("μmol/m2/s")+ stat_summary(fun.y=mean,geom = "line",lwd=2,aes(group=1) ) + theme_classic()
+
+grid.arrange(plot1, plot2, plot3, plot4, nrow=1, ncol = 4)
+
+
+require(gridExtra)
+func.1 <- function(x) x-mean(x)
+plot1 <- ggplot(all[all$Height > 20,], aes(x = Height, y = humid_temp, group =  Height))  + coord_flip() + ggtitle("Temperature") + xlab(" Node Height (m)") + ylab("°C")  + stat_summary(fun.y=func.1, geom="line",lwd=1,aes(group=1) ) + theme_classic()
+
+plot2 <- ggplot(all[all$Height > 20,], aes(x = Height,y =humidity, group =  Height))  + coord_flip() + ggtitle("Relative Humidity") + xlab(" Node Height (m)") + ylab("%RH")+ stat_summary(fun.y=func.1,geom = "line",lwd=1,aes(group=1) ) + theme_classic()
+
+plot3 <- ggplot(all[all$Height > 20 & all$hamatop != 0,], aes(x = Height,y = hamatop, group =  Height)) +  coord_flip() + ggtitle("Incident PAR") + xlab(" Node Height (m)") + ylab("μmol/m2/s")+ stat_summary(fun.y=func.1,geom = "line",lwd=1,aes(group=1) ) + theme_classic()
+
+plot4 <- ggplot(all_bot[all_bot$Height > 20 & all_bot$hamabot != 0,], aes(x = Height, y = hamabot, group =  Height))  + coord_flip() + ggtitle("Reflected PAR") + xlab("Node Height (m)") + ylab("μmol/m2/s")+ stat_summary(fun.y=func.1, geom = "line",lwd= 1,aes(group=1) ) + theme_classic()
+grid.arrange(plot1, plot2, plot3, plot4, nrow=1, ncol = 4)
+```
+
+
+c)
+```{r}
+dat_5.1 <- all1[all1$epoch >= 938 & all1$epoch <= 1225, ]
+
+#jpeg("3c time series for humidity for a selected day")
+ggplot(dat_5.1, aes(x=epoch, y=humidity, color=Height, alpha = 0.6))+geom_point()
+#dev.off()
+
+ggplot(dat_5.1, aes(x=epoch, y=humid_temp, color=Height, alpha = 0.6))+geom_point()
+```
+```{r}
+# yield for each time
+yield_time = c()
+for (i in 2:12635){
+  yield_time[i] = length(all[all$epoch == i,]$epoch)/length(dat_all$nodeid)
+}
+
+yield_node = c()
+for (i in 2:200){
+  yield_node[i] = length(all[all$nodeid == i,]$nodeid)/length(dat_all$epoch)
+}
+plot(yield_time, xlab = "epoch", ylab = "Yield For Each Time")
+
+plot(yield_node, xlab = "nodeid", ylab = "Yield For Each Node")
+```
+
+
